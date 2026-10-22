@@ -119,6 +119,12 @@ with `go version -m dnstt-client`.
    the release (a draft by default). Look at the draft and publish it on the Releases
    page; publishing creates the tag in this repository.
 
+The body of the release is written by [`release-notes.sh`](release-notes.sh): links to
+every archive, the dnstt source and `SHA256SUMS`, and what was built. To rewrite the body
+of an existing release, download its archives (`gh release download <release>`), run the
+script on them with the values of its run (listed at the top of the script) and pass the
+output to `gh release edit <release> --notes-file`.
+
 An existing release or tag is never replaced: the workflow stops instead. Run from any
 branch other than `main`, the workflow only builds and leaves the archives as an artifact
 of the run.

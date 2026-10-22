@@ -42,8 +42,6 @@ jobs:
     timeout-minutes: 30
     outputs:
       release: ${{ steps.inputs.outputs.release }}
-      commit: ${{ steps.inputs.outputs.commit }}
-      go: ${{ steps.go.outputs.version }}
     steps:
       # Actions are pinned by commit: a tag can be moved.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -106,10 +104,32 @@ jobs:
           for f in *.tar.gz; do tar tvzf "$f"; done
           for f in *.zip; do unzip -Z -l "$f"; done
 
+      # The body of the release. It is written here and not in the release
+      # job, which runs no code from the repository.
+      - name: Release notes
+        env:
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+          RELEASE: ${{ steps.inputs.outputs.release }}
+          TAG: ${{ inputs.tag }}
+          COMMIT: ${{ steps.inputs.outputs.commit }}
+          GO_VERSION: ${{ steps.go.outputs.version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          mkdir "$RUNNER_TEMP/notes"
+          ./release-notes.sh dist > "$RUNNER_TEMP/notes/notes.md"
+          cat "$RUNNER_TEMP/notes/notes.md"
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dist
           path: dist/
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: notes
+          path: ${{ runner.temp }}/notes/notes.md
           if-no-files-found: error
 
   # The only job with write access. It runs no code from the repository or
@@ -126,15 +146,17 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE: ${{ needs.build.outputs.release }}
-      TAG: ${{ inputs.tag }}
-      COMMIT: ${{ needs.build.outputs.commit }}
-      GO_VERSION: ${{ needs.build.outputs.go }}
       DRAFT: ${{ inputs.draft }}
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dist
           path: dist
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: notes
+          path: ${{ runner.temp }}/notes
 
       - name: Sums
         working-directory: dist
@@ -158,30 +180,11 @@ jobs:
         with:
           subject-checksums: dist/SHA256SUMS
 
-      - name: Release notes
-        run: |
-          repo=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY
-          cat > "$RUNNER_TEMP/notes.md" <<EOF
-          Unofficial build of [dnstt](https://www.bamsoftware.com/software/dnstt/) $TAG. It is not made or endorsed by the author of dnstt.
-
-          - Upstream tag: \`$TAG\`, commit [\`$COMMIT\`]($MIRROR/commit/$COMMIT)
-          - Changes: [CHANGELOG]($MIRROR/blob/$TAG/CHANGELOG)
-          - Built with \`$GO_VERSION\`, \`CGO_ENABLED=0\`, by [this workflow run]($repo/actions/runs/$GITHUB_RUN_ID) from $repo/commit/$GITHUB_SHA
-
-          Check a download (see the [README]($repo#verify-a-download)):
-
-          \`\`\`
-          sha256sum -c --ignore-missing SHA256SUMS
-          gh attestation verify dnstt-$RELEASE-linux-amd64.tar.gz --repo $GITHUB_REPOSITORY
-          \`\`\`
-          EOF
-          cat "$RUNNER_TEMP/notes.md"
-
       # The new tag points at the commit of this repository that built the
       # release: build.sh and go.mod from there reproduce the archives.
       - name: Release
         run: |
-          args=(--repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "dnstt $RELEASE" --notes-file "$RUNNER_TEMP/notes.md")
+          args=(--repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "dnstt $RELEASE" --notes-file "$RUNNER_TEMP/notes/notes.md")
           if [ "$DRAFT" = true ]; then
             args+=(--draft)
           fi
