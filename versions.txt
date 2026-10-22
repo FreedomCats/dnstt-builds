@@ -1,0 +1,15 @@
+# Upstream dnstt tags that may be built, with the commit each one must point
+# to. build.sh and the release workflow refuse a tag that is not listed here
+# or a checkout whose HEAD is a different commit.
+#
+# Check a new entry against both the upstream repository and the mirror:
+#   git ls-remote --tags https://www.bamsoftware.com/git/dnstt.git 'refs/tags/<tag>^{}'
+#   git ls-remote --tags https://github.com/FreedomCats/dnstt 'refs/tags/<tag>^{}'
+#
+# Tags before v1.20241021.0 are not listed: v1.20240513.0 has the same code
+# without the COPYING file, and older ones do not build with current Go
+# (their golang.org/x/sys and golang.org/x/net are too old).
+#
+# <tag> <commit>
+v1.20241021.0 82fb0a6790d991ec74867cc2ca9b953e6bda4d13
+v1.20260501.0 0c5c52a57d899c05428c116898941761a2ed83c2

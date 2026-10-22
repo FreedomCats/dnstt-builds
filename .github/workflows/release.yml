@@ -1,0 +1,188 @@
+# Release: dnstt from the mirror at a tag listed in versions.txt, upstream
+# tests, build.sh for every platform, and a GitHub release with the archives
+# and SHA256SUMS, with a build provenance attestation for each archive.
+#
+# Only by hand (Actions -> release -> Run workflow). The release is created
+# only when the workflow runs from main; from another branch the archives stay
+# an artifact of the run. A release or tag that already exists is never
+# replaced: rebuild with a suffix (<tag>-1, <tag>-2, ...).
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Upstream dnstt tag from versions.txt, e.g. v1.20260501.0
+        required: true
+        type: string
+      suffix:
+        description: Rebuild number; the release becomes <tag>-<suffix>. Empty for the first build of a tag.
+        required: false
+        default: ''
+        type: string
+      draft:
+        description: Create the release as a draft (publish it on the Releases page)
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag }}-${{ inputs.suffix }}
+  cancel-in-progress: false
+
+env:
+  MIRROR: https://github.com/FreedomCats/dnstt
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      release: ${{ steps.inputs.outputs.release }}
+      commit: ${{ steps.inputs.outputs.commit }}
+      go: ${{ steps.go.outputs.version }}
+    steps:
+      # Actions are pinned by commit: a tag can be moved.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Inputs reach the shell only through the environment.
+      - name: Inputs
+        id: inputs
+        env:
+          TAG: ${{ inputs.tag }}
+          SUFFIX: ${{ inputs.suffix }}
+        run: |
+          [[ $TAG =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::bad tag: $TAG"; exit 1; }
+          [[ -z $SUFFIX || $SUFFIX =~ ^[0-9]+$ ]] || { echo "::error::bad suffix: $SUFFIX"; exit 1; }
+          commit=$(awk -v tag="$TAG" '$1 == tag { print $2 }' versions.txt)
+          [[ $commit =~ ^[0-9a-f]{40}$ ]] || { echo "::error::$TAG is not in versions.txt"; exit 1; }
+          echo "release=$TAG${SUFFIX:+-$SUFFIX}" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+      # The Go release is the go line of go.mod; build.sh asks for the same
+      # one through GOTOOLCHAIN. No cache: a release is built from scratch.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Go
+        id: go
+        run: echo "version=$(go env GOVERSION)" >> "$GITHUB_OUTPUT"
+
+      # Upstream code runs no earlier than the next step, after the commit
+      # is checked against versions.txt.
+      - name: Clone dnstt
+        env:
+          TAG: ${{ inputs.tag }}
+          COMMIT: ${{ steps.inputs.outputs.commit }}
+        run: |
+          git -c advice.detachedHead=false clone --quiet --depth 1 --branch "$TAG" "$MIRROR" "$RUNNER_TEMP/dnstt"
+          head=$(git -C "$RUNNER_TEMP/dnstt" rev-parse HEAD)
+          echo "$TAG: $head"
+          [ "$head" = "$COMMIT" ] || { echo "::error::$TAG is $head in the mirror, versions.txt wants $COMMIT"; exit 1; }
+
+      - name: Upstream tests
+        working-directory: ${{ runner.temp }}/dnstt
+        env:
+          GOTOOLCHAIN: local
+          GOFLAGS: -mod=readonly
+        run: go test ./...
+
+      - name: Build
+        env:
+          TAG: ${{ inputs.tag }}
+          SUFFIX: ${{ inputs.suffix }}
+        run: ./build.sh "$RUNNER_TEMP/dnstt" "$TAG" dist ${SUFFIX:+"$SUFFIX"}
+
+      - name: Contents
+        run: |
+          cd dist
+          for f in *.tar.gz; do tar tvzf "$f"; done
+          for f in *.zip; do unzip -Z -l "$f"; done
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  # The only job with write access. It runs no code from the repository or
+  # from dnstt: it checks, attests and uploads what the build job made.
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE: ${{ needs.build.outputs.release }}
+      TAG: ${{ inputs.tag }}
+      COMMIT: ${{ needs.build.outputs.commit }}
+      GO_VERSION: ${{ needs.build.outputs.go }}
+      DRAFT: ${{ inputs.draft }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+
+      - name: Sums
+        working-directory: dist
+        run: sha256sum --strict -c SHA256SUMS
+
+      # Draft releases are not found by tag, so look through the list. A tag
+      # without a release counts too: the release must not take it over.
+      # The lists are taken first, so that a failed request stops the job.
+      - name: No such release yet
+        run: |
+          releases=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq '.[].tag_name')
+          tags=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$RELEASE" --jq '.[].ref')
+          if grep -Fxq "$RELEASE" <<<"$releases"; then
+            echo "::error::release $RELEASE already exists"; exit 1
+          fi
+          if grep -Fxq "refs/tags/$RELEASE" <<<"$tags"; then
+            echo "::error::tag $RELEASE already exists"; exit 1
+          fi
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: dist/SHA256SUMS
+
+      - name: Release notes
+        run: |
+          repo=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY
+          cat > "$RUNNER_TEMP/notes.md" <<EOF
+          Unofficial build of [dnstt](https://www.bamsoftware.com/software/dnstt/) $TAG. It is not made or endorsed by the author of dnstt.
+
+          - Upstream tag: \`$TAG\`, commit [\`$COMMIT\`]($MIRROR/commit/$COMMIT)
+          - Changes: [CHANGELOG]($MIRROR/blob/$TAG/CHANGELOG)
+          - Built with \`$GO_VERSION\`, \`CGO_ENABLED=0\`, by [this workflow run]($repo/actions/runs/$GITHUB_RUN_ID) from $repo/commit/$GITHUB_SHA
+
+          Check a download (see the [README]($repo#verify-a-download)):
+
+          \`\`\`
+          sha256sum -c --ignore-missing SHA256SUMS
+          gh attestation verify dnstt-$RELEASE-linux-amd64.tar.gz --repo $GITHUB_REPOSITORY
+          \`\`\`
+          EOF
+          cat "$RUNNER_TEMP/notes.md"
+
+      # The new tag points at the commit of this repository that built the
+      # release: build.sh and go.mod from there reproduce the archives.
+      - name: Release
+        run: |
+          args=(--repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "dnstt $RELEASE" --notes-file "$RUNNER_TEMP/notes.md")
+          if [ "$DRAFT" = true ]; then
+            args+=(--draft)
+          fi
+          gh release create "$RELEASE" dist/* "${args[@]}"
