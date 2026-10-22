@@ -5,6 +5,8 @@
 Unofficial, reproducible builds of [dnstt](https://www.bamsoftware.com/software/dnstt/),
 the DNS tunnel by David Fifield. **These builds are not made or endorsed by the author of
 dnstt.** The code is upstream dnstt as is, built from its release tags without changes.
+They are mainly for those who would rather not build dnstt themselves, especially on
+Windows.
 
 - dnstt home page and documentation: <https://www.bamsoftware.com/software/dnstt/>
 - upstream repository: <https://www.bamsoftware.com/git/dnstt.git>
@@ -18,10 +20,10 @@ every archive; it is not repeated here.
 
 | System  | Architecture          | Archive                                      |
 |---------|-----------------------|----------------------------------------------|
-| Linux   | x86-64 (amd64)        | `dnstt-<version>-linux-amd64.tar.gz`         |
-| Linux   | ARM64 (aarch64)       | `dnstt-<version>-linux-arm64.tar.gz`         |
 | Windows | x86-64 (amd64)        | `dnstt-<version>-windows-amd64.zip`          |
 | Windows | ARM64                 | `dnstt-<version>-windows-arm64.zip`          |
+| Linux   | x86-64 (amd64)        | `dnstt-<version>-linux-amd64.tar.gz`         |
+| Linux   | ARM64 (aarch64)       | `dnstt-<version>-linux-arm64.tar.gz`         |
 | macOS   | Intel (amd64)         | `dnstt-<version>-darwin-amd64.tar.gz`        |
 | macOS   | Apple silicon (arm64) | `dnstt-<version>-darwin-arm64.tar.gz`        |
 
@@ -32,15 +34,20 @@ binaries (`CGO_ENABLED=0`) and need nothing else.
 `<version>` is the upstream tag, such as `v1.20260501.0`. A rebuild of the same tag, for
 example with a newer Go, gets a suffix: `v1.20260501.0-1`.
 
-The binaries are not code-signed. On macOS, if Gatekeeper refuses to run them, remove the
-quarantine flag: `xattr -d com.apple.quarantine dnstt-client dnstt-server`. On Windows,
-SmartScreen may ask for confirmation.
+The binaries are not code-signed. On Windows, SmartScreen may ask for confirmation. On
+macOS, if Gatekeeper refuses to run them, remove the quarantine flag:
+`xattr -d com.apple.quarantine dnstt-client dnstt-server`.
 
 ## Verify a download
 
 Download the archive for your platform and `SHA256SUMS` from
 [Releases](https://github.com/FreedomCats/dnstt-builds/releases), then check the
 checksum:
+
+```powershell
+# Windows (PowerShell): compare with the line in SHA256SUMS
+(Get-FileHash dnstt-v1.20260501.0-windows-amd64.zip -Algorithm SHA256).Hash.ToLower()
+```
 
 ```sh
 # Linux
@@ -49,17 +56,12 @@ sha256sum -c --ignore-missing SHA256SUMS
 grep dnstt-v1.20260501.0-darwin-arm64.tar.gz SHA256SUMS | shasum -a 256 -c
 ```
 
-```powershell
-# Windows (PowerShell): compare with the line in SHA256SUMS
-(Get-FileHash dnstt-v1.20260501.0-windows-amd64.zip -Algorithm SHA256).Hash.ToLower()
-```
-
 Every archive also has a build provenance attestation: a signed statement that it was
 built by the release workflow of this repository, from which commit and in which
 workflow run. Check it with the [GitHub CLI](https://cli.github.com/):
 
 ```sh
-gh attestation verify dnstt-v1.20260501.0-linux-amd64.tar.gz --repo FreedomCats/dnstt-builds
+gh attestation verify dnstt-v1.20260501.0-windows-amd64.zip --repo FreedomCats/dnstt-builds
 ```
 
 ## Build the same yourself

@@ -5,7 +5,8 @@
 Неофициальные воспроизводимые сборки [dnstt](https://www.bamsoftware.com/software/dnstt/) —
 DNS-туннеля Дэвида Файфилда (David Fifield). **Сборки делает не автор dnstt, и он за них
 не отвечает.** Код — dnstt из апстрима как есть, собранный по его тегам выпусков без
-изменений.
+изменений. Сборки — прежде всего для тех, кому неудобно собирать dnstt самому, особенно на
+Windows.
 
 - страница dnstt и документация: <https://www.bamsoftware.com/software/dnstt/>
 - репозиторий апстрима: <https://www.bamsoftware.com/git/dnstt.git>
@@ -19,10 +20,10 @@ DNS-туннеля Дэвида Файфилда (David Fifield). **Сборки
 
 | Система | Архитектура           | Архив                                        |
 |---------|-----------------------|----------------------------------------------|
-| Linux   | x86-64 (amd64)        | `dnstt-<версия>-linux-amd64.tar.gz`          |
-| Linux   | ARM64 (aarch64)       | `dnstt-<версия>-linux-arm64.tar.gz`          |
 | Windows | x86-64 (amd64)        | `dnstt-<версия>-windows-amd64.zip`           |
 | Windows | ARM64                 | `dnstt-<версия>-windows-arm64.zip`           |
+| Linux   | x86-64 (amd64)        | `dnstt-<версия>-linux-amd64.tar.gz`          |
+| Linux   | ARM64 (aarch64)       | `dnstt-<версия>-linux-arm64.tar.gz`          |
 | macOS   | Intel (amd64)         | `dnstt-<версия>-darwin-amd64.tar.gz`         |
 | macOS   | Apple silicon (arm64) | `dnstt-<версия>-darwin-arm64.tar.gz`         |
 
@@ -33,14 +34,19 @@ DNS-туннеля Дэвида Файфилда (David Fifield). **Сборки
 `<версия>` — тег апстрима, например `v1.20260501.0`. Пересборка того же тега (скажем, более
 новым Go) получает суффикс: `v1.20260501.0-1`.
 
-Бинари не подписаны. Если macOS (Gatekeeper) не даёт их запустить, снимите флаг карантина:
-`xattr -d com.apple.quarantine dnstt-client dnstt-server`. Windows (SmartScreen) может
-попросить подтверждение.
+Бинари не подписаны. Windows (SmartScreen) может попросить подтверждение. Если macOS
+(Gatekeeper) не даёт их запустить, снимите флаг карантина:
+`xattr -d com.apple.quarantine dnstt-client dnstt-server`.
 
 ## Как проверить скачанное
 
 Скачайте со страницы [Releases](https://github.com/FreedomCats/dnstt-builds/releases)
 архив для своей платформы и `SHA256SUMS` и сверьте контрольную сумму:
+
+```powershell
+# Windows (PowerShell): сравните со строкой в SHA256SUMS
+(Get-FileHash dnstt-v1.20260501.0-windows-amd64.zip -Algorithm SHA256).Hash.ToLower()
+```
 
 ```sh
 # Linux
@@ -49,17 +55,12 @@ sha256sum -c --ignore-missing SHA256SUMS
 grep dnstt-v1.20260501.0-darwin-arm64.tar.gz SHA256SUMS | shasum -a 256 -c
 ```
 
-```powershell
-# Windows (PowerShell): сравните со строкой в SHA256SUMS
-(Get-FileHash dnstt-v1.20260501.0-windows-amd64.zip -Algorithm SHA256).Hash.ToLower()
-```
-
 У каждого архива есть ещё и подпись происхождения (build provenance attestation):
 подписанное заявление, что архив собран workflow выпуска этого репозитория, из какого
 коммита и в каком прогоне. Проверяется [GitHub CLI](https://cli.github.com/):
 
 ```sh
-gh attestation verify dnstt-v1.20260501.0-linux-amd64.tar.gz --repo FreedomCats/dnstt-builds
+gh attestation verify dnstt-v1.20260501.0-windows-amd64.zip --repo FreedomCats/dnstt-builds
 ```
 
 ## Как собрать то же самое самому

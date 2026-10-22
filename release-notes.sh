@@ -64,17 +64,17 @@ platforms=$(sed -n "s/^platforms='\(.*\)'\$/\1/p" "$here/build.sh")
 
 download=$REPO_URL/releases/download/$RELEASE
 list=
-first=
+win=
 n=0
 for p in $platforms; do
 	os=${p%/*}
 	arch=${p#*/}
 	# The same words as the table in README.md.
 	case $p in
-	linux/amd64) label='**Linux** x86-64 (amd64)' ;;
-	linux/arm64) label='**Linux** ARM64 (aarch64)' ;;
 	windows/amd64) label='**Windows** x86-64 (amd64)' ;;
 	windows/arm64) label='**Windows** ARM64' ;;
+	linux/amd64) label='**Linux** x86-64 (amd64)' ;;
+	linux/arm64) label='**Linux** ARM64 (aarch64)' ;;
 	darwin/amd64) label='**macOS** Intel (amd64)' ;;
 	darwin/arm64) label='**macOS** Apple silicon (arm64)' ;;
 	*) die "no label for $p: add it here" ;;
@@ -89,13 +89,15 @@ for p in $platforms; do
 	[ -n "$name" ] || die "$dir: no archive dnstt-$RELEASE-$os-$arch.tar.gz or .zip"
 	awk -v f="$name" '$2 == f { found = 1 } END { exit !found }' "$dir/SHA256SUMS" ||
 		die "$dir/SHA256SUMS: no $name"
-	: "${first:=$name}"
+	# The example in the checks below.
+	[ "$p" != windows/amd64 ] || win=$name
 	list="$list- $label: [$name]($download/$name)
 "
 	n=$((n + 1))
 done
 sums=$(awk 'END { print NR }' "$dir/SHA256SUMS")
 [ "$sums" -eq "$n" ] || die "$dir/SHA256SUMS: $sums archives, build.sh has $n platforms"
+[ -n "$win" ] || die "build.sh: no windows/amd64"
 
 cat <<EOF
 Unofficial build of [dnstt](https://www.bamsoftware.com/software/dnstt/) $TAG. It is not made or endorsed by the author of dnstt.
@@ -107,7 +109,7 @@ How to set up and use dnstt is on the [dnstt home page](https://www.bamsoftware.
 $list- **Source** of dnstt $TAG: [zip]($MIRROR/archive/refs/tags/$TAG.zip) · [tar.gz]($MIRROR/archive/refs/tags/$TAG.tar.gz)
 - **SHA-256 checksums**: [SHA256SUMS]($download/SHA256SUMS)
 
-Each archive holds \`dnstt-client\` and \`dnstt-server\` (\`.exe\` on Windows) with \`README\`, \`CHANGELOG\` and \`COPYING\` from dnstt. The binaries are not code-signed: if macOS Gatekeeper refuses to run them, see the [README]($REPO_URL#platforms); Windows SmartScreen may ask for confirmation.
+Each archive holds \`dnstt-client\` and \`dnstt-server\` (\`.exe\` on Windows) with \`README\`, \`CHANGELOG\` and \`COPYING\` from dnstt. The binaries are not code-signed: Windows SmartScreen may ask for confirmation, and if macOS Gatekeeper refuses to run them, see the [README]($REPO_URL#platforms).
 
 ## Build
 
@@ -115,10 +117,21 @@ Each archive holds \`dnstt-client\` and \`dnstt-server\` (\`.exe\` on Windows) w
 - Changes: [CHANGELOG]($MIRROR/blob/$TAG/CHANGELOG)
 - Built with \`$GO_VERSION\`, \`CGO_ENABLED=0\`, by [this workflow run]($RUN_URL) from $REPO_URL/commit/$BUILD_COMMIT
 
-Check a download (see the [README]($REPO_URL#verify-a-download)):
+Check a download (see the [README]($REPO_URL#verify-a-download)). On Windows, in PowerShell, compare the output with the line in \`SHA256SUMS\`:
 
+\`\`\`powershell
+(Get-FileHash $win -Algorithm SHA256).Hash.ToLower()
 \`\`\`
+
+On Linux (for macOS, see the README):
+
+\`\`\`sh
 sha256sum -c --ignore-missing SHA256SUMS
-gh attestation verify $first --repo $repo
+\`\`\`
+
+The build provenance attestation, with the [GitHub CLI](https://cli.github.com/):
+
+\`\`\`sh
+gh attestation verify $win --repo $repo
 \`\`\`
 EOF
